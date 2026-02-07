@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: uceshop-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - uceshop-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  customer-service:
+    build: 
+      context: .
+      dockerfile: apps/customer-service/Dockerfile
+    container_name: uceshop-customer-service
+    environment:
+      - NODE_ENV=production
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - SERVICE_PORT=${CUSTOMER_SERVICE_PORT}
+    ports:
+      - "${CUSTOMER_SERVICE_PORT}:${CUSTOMER_SERVICE_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - uceshop-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${CUSTOMER_SERVICE_PORT}/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  product-service:
+    build: 
+      context: .
+      dockerfile: apps/product-service/Dockerfile
+    container_name: uceshop-product-service
+    environment:
+      - NODE_ENV=production
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - SERVICE_PORT=${PRODUCT_SERVICE_PORT}
+    ports:
+      - "${PRODUCT_SERVICE_PORT}:${PRODUCT_SERVICE_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - uceshop-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${PRODUCT_SERVICE_PORT}/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  order-service:
+    build: 
+      context: .
+      dockerfile: apps/order-service/Dockerfile
+    container_name: uceshop-order-service
+    environment:
+      - NODE_ENV=production
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - SERVICE_PORT=${ORDER_SERVICE_PORT}
+      - CUSTOMER_SERVICE_URL=${CUSTOMER_SERVICE_URL}
+      - PRODUCT_SERVICE_URL=${PRODUCT_SERVICE_URL}
+    ports:
+      - "${ORDER_SERVICE_PORT}:${ORDER_SERVICE_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    networks:
+      - uceshop-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${ORDER_SERVICE_PORT}/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  uceshop-network:
+    driver: bridge
